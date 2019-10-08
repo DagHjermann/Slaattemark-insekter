@@ -1,0 +1,921 @@
+---
+title: "Insekter i slåttemark - grafer/tabeller"
+author: "DHJ"
+date: "28 9 2019"
+output: 
+  html_document:
+    keep_md: true
+    toc: true  
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+    
+    
+---
+
+## Pakker
+```{r, message=FALSE}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(treemapify)
+
+```
+
+## Data
+```{r}
+# dir("Input_data")
+
+# Artsdata         
+dat <- read_excel("Input_data/tilhørighet_insekter i slåttemark.xlsx")
+
+dat <- dat %>%
+  rename(Primær = `Tilhørighet (se kommentar)`,
+         Pollinator = `Pollinator (ja (="x")/nei (tomt felt))`,
+         Sekundær = `Sekundærhabitat (se kommentar)`) %>%
+  mutate(Status = ifelse(is.na(Status2015), "-", Status2015),
+         Status = factor(Status, levels = c("-", "DD", "NT", "VU", "EN", "CR"))
+  )
+
+# Lokalitetsdata         
+dat2 <- read_excel("Input_data/Lokalitetsdata_insekter i slåttemark.xlsx") %>% 
+  mutate(Vegetasjonssone = 
+           factor(Vegetasjonssone, levels = c("Nordboreal", "Mellomboreal", "Sørboreal", "Boreonemoral")))
+
+
+
+```
+
+## Artsdata
+```{r}
+dat
+```
+
+
+## Lokalitetsdata
+
+```{r}
+# dat2
+dat2 <- dat2 %>% 
+  left_join(dat %>% select(Art, Primær, Sekundær, Status, Order, Family), by = "Art")
+
+```
+
+### Tabeller for det totale artsmangfoldet på engene  
+
+#### Habitatkrav (primær og sekundær)  
+```{r}
+dat2 %>%
+  count(Art, Primær, Sekundær) %>%
+  xtabs(~Primær + addNA(Sekundær), .)
+
+```
+
+#### Grupper 1
+```{r}
+dat2 %>%
+  count(Art, Order, Family) %>%
+  xtabs(~Order, .)
+
+```
+
+#### Grupper 2
+```{r}
+dat2 %>%
+  count(Art, Order, Family) %>%
+  count(Order, Family) %>%
+  arrange(desc(n))
+
+```
+
+#### Grupper, 'treemap'  
+
+```{r}
+df <- dat2 %>%
+  count(Art, Order, Family, Primær) %>%
+  group_by(Order) %>%
+  mutate(n_order = n()) %>%
+  group_by(Order, Family, n_order) %>%
+  summarise(n = n(), Engarter = 100*mean(Primær %in% c("1a","1b","2"))) %>%
+  arrange(desc(n)) %>%
+  ungroup() %>%
+  mutate(
+    Order2 = ifelse(n_order >= 25, Order, "Other orders"),
+    Family2 = ifelse(n >= 25, Family, "Other families")
+  )
+
+gg <- ggplot(df, aes(area = n, fill = Engarter,
+               subgroup = Order2, subgroup2 = Family2)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border(size = 3, colour = "red2") +
+  geom_treemap_subgroup2_text(alpha = 0.8, color = "white") +
+  geom_treemap_subgroup_text(place = "centre", grow = TRUE, alpha = 0.7, color = "red2") +
+  scale_fill_continuous("Engarter\n(%)")
+
+ggsave("Treemap.png", gg, width = 7, height = 4.5)
+
+```
+
+```{r}
+ggplot2::ggplot(G20, ggplot2::aes(area = gdp_mil_usd, fill = hdi,
+                                  subgroup = hemisphere, subgroup2 = region)) +
+  geom_treemap() +
+  geom_treemap_subgroup_text(place = "centre", grow = TRUE, alpha = 0.5) +
+  geom_treemap_subgroup2_text()
+
+```
+
+
+
+#### Primærhabitat vs. rødlistestatus
+```{r}
+dat2 %>%
+  mutate(Status = forcats::fct_explicit_na(Status)) %>%
+  count(Art, Primær, Status) %>%
+  xtabs(~Primær + Status, .)
+
+```
+
+#### Sekundærhabitat vs. rødlistestatus
+```{r}
+dat2 %>%
+  mutate(Status = forcats::fct_explicit_na(Status)) %>%
+  count(Art, Sekundær, Status) %>%
+  xtabs(~addNA(Sekundær) + Status, .)
+
+```
+
+
+
+
+## Data på lokalitetsnivå  
+```{r}
+dat_meta <- dat2 %>%
+  group_by(Lokalitet, Vegetasjonssone, Engtype, Felleoppsett) %>%
+  summarise(arter = n(), 
+            rødlista = sum(Status %in% c("NT", "VU", "EN", "CR")),
+            en_cr = sum(Status %in% c("EN", "CR")),
+            prim_1og2 = sum(Primær %in% c("1a","1b","2")),
+            prim_1b = sum(Primær %in% c("1a","1b")),
+            prim_2 = sum(Primær %in% c("2")),
+            prim_3 = sum(Primær %in% c("3")),
+            prim_4 = sum(Primær %in% c("4","5")),
+            rødlista_prim1og2 = sum(Status %in% c("NT", "VU", "EN", "CR") & Primær %in% c("1a","1b","2")),
+            sek = sum(!is.na(Sekundær)),
+            sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2")),
+            rødlista_sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2") & 
+                                          Status %in% c("NT", "VU", "EN", "CR"))
+  )
+
+```
+
+### Tabell
+```{r}
+xtabs(~Vegetasjonssone + Engtype, dat_meta)
+```
+
+## Plott (y vs. x)  
+```{r}
+ggplot(dat_meta, aes(Engtype, arter)) +
+  geom_point()
+```
+
+### Rødlistearter vs totalt antall arter
+```{r}
+cols <- RColorBrewer::brewer.pal(11, "Spectral")[c(1,3,9,11)] %>% rev()
+
+ggplot(dat_meta, aes(arter, rødlista, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(title = "Antall rødlistearter", y = "Antall rødlistearter", x = "Antall arter")
+
+ggplot(dat_meta, aes(arter, en_cr, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(title = "Antall rødlistearter i kategoriene EN + CR", y = "Antall rødlistearter i kategoriene EN + CR", x = "Antall arter")
+```
+
+### Engavhengige arter vs totalt antall arter  
+```{r}
+ggplot(dat_meta, aes(arter, prim_1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(y = "Antall engavhengige arter (kat 1 + 2)", x = "Antall arter")
+
+
+```
+
+### Engavhengige rødlistearter vs totalt engavhengige arter  
+```{r}
+ggplot(dat_meta, aes(prim_1og2, rødlista_prim1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(y = "Antall engavhengige rødlistearter (kat 1 + 2)", x = "Antall engavhengige arter")
+
+```
+
+### Engavhengige rødlistearter vs totalt rødlistearter  
+```{r}
+ggplot(dat_meta, aes(rødlista, rødlista_prim1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(y = "Antall engavhengige rødlistearter (kat 1 + 2)", x = "Antall rødlistearter")
+
+```
+
+### Arter med sekundærkrav vs totalt antall arter  
+```{r}
+ggplot(dat_meta, aes(arter, sek, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(y = "Antall arter med sekundærkrav", x = "Antall arter")
+
+```
+
+### Engavhengige arter med sekundærkrav vs totalt antall arter  
+```{r}
+ggplot(dat_meta, aes(prim_1og2, sek_prim1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols) +
+  labs(y = "Antall engavhengige arter (1+2) med sekundærkrav", x = "Antall engavhengige arter (1+2")
+
+```
+
+### Engavhengige rødlistearter med sekundærkrav vs totalt rødlistearter  
+```{r}
+ggplot(dat_meta, aes(rødlista, rødlista_sek_prim1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols)
+
+```
+
+### Engavhengige rødlistearter med sekundærkrav vs engavhengige rødlistearter  
+```{r}
+ggplot(dat_meta, aes(rødlista_prim1og2, rødlista_sek_prim1og2, color = Vegetasjonssone, shape = Engtype)) +
+  geom_point(size = rel(3)) +
+  scale_color_manual(values = cols)
+
+```
+
+## Søylediagram for lokaliteter
+
+### Data  
+```{r}
+habitat_levels <- c("Avhengig kun av eng", "Avhengig av eng og annet habitat", 
+                    "Avhengig av annet habitat, men ikke eng", "Ikke avhengig av eng eller annet kjent habitat")
+
+dat_barplot <- dat2 %>%
+  mutate(Lokalitet2 = sprintf("%s\n%s (%s)", Lokalitet, Engtype, Vegetasjonssone),  # For informative x axis
+         # 'Sort_order' is used later to put Lokalitet2 in a logical order (order by type first, then by zone)
+         Sort_order = 
+           case_when(Engtype == "Lågurteng" ~ 10,
+                     Engtype == "Kalkeng" ~ 10,
+                     Engtype == "Blåbær- og lågurteng" ~ 10) +
+           case_when(Vegetasjonssone == "Boreonemoral" ~ 1,
+                     Vegetasjonssone == "Sørboreal" ~ 2,
+                     Vegetasjonssone == "Mellomboreal" ~ 3,
+                     Vegetasjonssone == "Nordboreal" ~ 4),
+         Habitat = factor(
+           case_when(
+             Primær %in% c("1a","1b","2") & is.na(Sekundær) ~ "Avhengig kun av eng",
+             Primær %in% c("1a","1b","2") & !is.na(Sekundær) ~ "Avhengig av eng og annet habitat",
+             Primær %in% c("3","4") & is.na(Sekundær) ~ "Ikke avhengig av eng eller annet kjent habitat",
+             Primær %in% c("3","4") & !is.na(Sekundær) ~ "Avhengig av annet habitat, men ikke eng"
+           ),
+           levels = habitat_levels)
+  ) %>%
+  filter(!is.na(Habitat))
+
+# Set levels for 'Lokalitet2':
+lokalitet2_levels <- dat_barplot %>%
+  count(Lokalitet2, Sort_order) %>% 
+  arrange(Sort_order) %>%
+  pull(Lokalitet2)
+
+# habitat_levels <- dat_barplot %>%
+#   count(Habitat) %>% dput()
+
+dat_barplot <- dat_barplot %>%
+  mutate(Lokalitet2 = factor(Lokalitet2, levels = lokalitet2_levels))
+
+```
+
+### Alle arter
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_barplot, aes(x = Lokalitet2, fill = Habitat)) +
+  geom_bar() +
+  scale_fill_brewer(type = "qual", palette = 6) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35),
+        axis.title.x = element_blank()) +
+  labs(y = "Antall arter")
+
+```
+### Rødlistearter
+```{r, fig.height = 5, fig.width = 8.5}
+
+dat_barplot %>%
+  filter(Status %in% c("NT", "VU", "EN", "CR")) %>%
+  ggplot(aes(x = Lokalitet2, fill = Habitat)) +
+  geom_bar() +
+  scale_fill_brewer(type = "qual", palette = 6) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35),
+        axis.title.x = element_blank()) +
+  labs(y = "Antall rødlistearter")
+
+```
+
+### Arter i rødlistekategori EN og CR
+```{r, fig.height = 5, fig.width = 8.5}
+
+dat_barplot %>%
+  filter(Status %in% c("EN", "CR")) %>%
+  ggplot(aes(x = Lokalitet2, fill = Habitat)) +
+  geom_bar() +
+  scale_fill_brewer(type = "qual", palette = 6, drop = FALSE) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35),
+        axis.title.x = element_blank()) +
+  labs(y = "Antall truede rødlistearter")
+
+```
+
+## Unike arter 
+Antall arter unike for én lokalitet   
+
+### Lage data    
+```{r, fig.height = 5, fig.width = 8.5}
+# Get number of localities per species
+dat_number_loc <- dat2 %>%
+  group_by(Art) %>%
+  summarise(Antall_lokaliteter = length(unique(Lokalitet)))
+
+# As dat_meta, but also groups on 'Unik_art'
+dat_meta2 <- dat2 %>%
+  left_join(dat_number_loc, by = "Art") %>% 
+  mutate(Unikhet = 
+           factor(ifelse(Antall_lokaliteter == 1, "Unik", "Ikke unik"),
+                  levels = c("Ikke unik","Unik")
+                  ),
+         # For informative x axis:
+         Lokalitet2 = sprintf("%s\n%s (%s)", Lokalitet, Engtype, Vegetasjonssone),
+         # 'Sort_order' is used later to put Lokalitet2 in a logical order (order by type first, then by zone)
+         Sort_order = 
+           case_when(Engtype == "Lågurteng" ~ 10,
+                     Engtype == "Kalkeng" ~ 10,
+                     Engtype == "Blåbær- og lågurteng" ~ 10) +
+           case_when(Vegetasjonssone == "Boreonemoral" ~ 1,
+                     Vegetasjonssone == "Sørboreal" ~ 2,
+                     Vegetasjonssone == "Mellomboreal" ~ 3,
+                     Vegetasjonssone == "Nordboreal" ~ 4)
+         ) %>%
+  group_by(Lokalitet, Lokalitet2, Sort_order, 
+           Vegetasjonssone, Engtype, Felleoppsett, Unikhet) %>%
+  summarise(arter = n(), 
+            rødlista = sum(Status %in% c("NT", "VU", "EN", "CR")),
+            en_cr = sum(Status %in% c("EN", "CR")),
+            prim_1og2 = sum(Primær %in% c("1a","1b","2")),
+            prim_1b = sum(Primær %in% c("1a","1b")),
+            prim_2 = sum(Primær %in% c("2")),
+            prim_3 = sum(Primær %in% c("3")),
+            prim_4 = sum(Primær %in% c("4","5")),
+            rødlista_prim1og2 = sum(Status %in% c("NT", "VU", "EN", "CR") & Primær %in% c("1a","1b","2")),
+            sek = sum(!is.na(Sekundær)),
+            sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2")),
+            rødlista_sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2") & 
+                                          Status %in% c("NT", "VU", "EN", "CR"))
+  ) %>%
+  ungroup()
+
+# Set levels for 'Lokalitet2':
+lokalitet2_levels <- dat_meta2 %>%
+  count(Lokalitet2, Sort_order) %>% 
+  arrange(Sort_order) %>%
+  pull(Lokalitet2)
+
+dat_meta2 <- dat_meta2 %>%
+  mutate(Lokalitet2 = factor(Lokalitet2, levels = lokalitet2_levels))
+
+```
+
+### Alle arter
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta2, aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall arter")
+
+```
+
+### Rødlistearter
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta2, aes(Lokalitet2, rødlista, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall rødlistearter")
+
+```
+
+### Arter avhengige av eng (kategori 1b + 2)
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta2, aes(Lokalitet2, prim_1og2, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige arter")
+
+```
+
+### Rødlistearter avhengige av eng (kategori 1b + 2)
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta2, aes(Lokalitet2, rødlista_prim1og2, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige rødlistearter")
+
+```
+
+
+
+## Arter som finnes i 1,2,3, flere lokaliteter   
+Dvs. en generalisering av forrige type plott (med arter unike for én lokalitet) 
+
+### Lage data    
+```{r, fig.height = 5, fig.width = 8.5}
+# Get number of localities per species
+dat_number_loc <- dat2 %>%
+  group_by(Art) %>%
+  summarise(Antall_lokaliteter = length(unique(Lokalitet)))
+
+# As dat_meta, but also groups on 'Unik_art'
+dat_meta3 <- dat2 %>%
+  left_join(dat_number_loc, by = "Art") %>% 
+  mutate(Unikhet = 
+           factor(
+             case_when(
+               Antall_lokaliteter == 1 ~ "1 lokalitet",
+               Antall_lokaliteter == 2 ~ "2 lokaliteter",
+               Antall_lokaliteter == 3 ~ "3 lokaliteter",
+               Antall_lokaliteter >= 4 ~ "4+ lokaliteter"),
+             levels = c("4+ lokaliteter", "3 lokaliteter", "2 lokaliteter", "1 lokalitet")
+                  ),
+         # For informative x axis:
+         Lokalitet2 = sprintf("%s\n%s (%s)", Lokalitet, Engtype, Vegetasjonssone),
+         # 'Sort_order' is used later to put Lokalitet2 in a logical order (order by type first, then by zone)
+         Sort_order = 
+           case_when(Engtype == "Lågurteng" ~ 10,
+                     Engtype == "Kalkeng" ~ 10,
+                     Engtype == "Blåbær- og lågurteng" ~ 10) +
+           case_when(Vegetasjonssone == "Boreonemoral" ~ 1,
+                     Vegetasjonssone == "Sørboreal" ~ 2,
+                     Vegetasjonssone == "Mellomboreal" ~ 3,
+                     Vegetasjonssone == "Nordboreal" ~ 4)
+         ) %>%
+  group_by(Lokalitet, Lokalitet2, Sort_order, 
+           Vegetasjonssone, Engtype, Felleoppsett, Unikhet) %>%
+  summarise(arter = n(), 
+            rødlista = sum(Status %in% c("NT", "VU", "EN", "CR")),
+            en_cr = sum(Status %in% c("EN", "CR")),
+            prim_1og2 = sum(Primær %in% c("1a","1b","2")),
+            prim_1b = sum(Primær %in% c("1a","1b")),
+            prim_2 = sum(Primær %in% c("2")),
+            prim_3 = sum(Primær %in% c("3")),
+            prim_4 = sum(Primær %in% c("4","5")),
+            rødlista_prim1og2 = sum(Status %in% c("NT", "VU", "EN", "CR") & Primær %in% c("1a","1b","2")),
+            sek = sum(!is.na(Sekundær)),
+            sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2")),
+            rødlista_sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2") & 
+                                          Status %in% c("NT", "VU", "EN", "CR"))
+  ) %>%
+  ungroup()
+
+# Set levels for 'Lokalitet2':
+lokalitet2_levels <- dat_meta3 %>%
+  count(Lokalitet2, Sort_order) %>% 
+  arrange(Sort_order) %>%
+  pull(Lokalitet2)
+
+dat_meta3 <- dat_meta3 %>%
+  mutate(Lokalitet2 = factor(Lokalitet2, levels = lokalitet2_levels))
+
+```
+
+### Alle arter
+```{r, fig.height = 5, fig.width = 8.5}
+
+cols_blues <- RColorBrewer::brewer.pal(5, "Blues")
+  
+ggplot(dat_meta3, aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall arter")
+
+```
+
+### Rødlistearter
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta3, aes(Lokalitet2, rødlista, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall rødlistearter")
+
+```
+
+### Arter avhengige av eng (kategori 1b + 2)
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta3, aes(Lokalitet2, prim_1og2, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige arter")
+
+```
+
+### Rødlistearter avhengige av eng (kategori 1b + 2)
+```{r, fig.height = 5, fig.width = 8.5}
+ggplot(dat_meta3, aes(Lokalitet2, rødlista_prim1og2, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige rødlistearter")
+
+```
+
+## Arter i 1,2,3,fler lok - for taxa
+
+### Definere funksjon
+```{r}
+make_uniqueness_data <- function(df, type){
+  
+  # Get number of localities per species
+  dat_number_loc <- df %>%
+    group_by(Art) %>%
+    summarise(Antall_lokaliteter = length(unique(Lokalitet)))
+  
+  # As dat_meta, but also groups on 'Unik_art'
+  result <- df %>%
+    left_join(dat_number_loc, by = "Art")
+  if (type == 1) {
+    result <- result %>% 
+    mutate(Unikhet = 
+             factor(
+               case_when(
+                 Antall_lokaliteter == 1 ~ "1 lokalitet",
+                 Antall_lokaliteter == 2 ~ "2 lokaliteter",
+                 Antall_lokaliteter == 3 ~ "3 lokaliteter",
+                 Antall_lokaliteter >= 4 ~ "4+ lokaliteter"),
+               levels = c("4+ lokaliteter", "3 lokaliteter", "2 lokaliteter", "1 lokalitet")
+             )
+           )
+    } else if (type == 2){
+      result <- result %>%
+        mutate(Unikhet = factor(
+               case_when(
+                 Antall_lokaliteter == 1 ~ "Unik",
+                 Antall_lokaliteter >= 2 ~ "Ikke unik"),
+               levels = c("Ikke unik", "Unik")
+             )
+           )
+    } else {
+      stop("Type must be 1 or 2") 
+    }
+  result <- result %>%
+    mutate(# For informative x axis:
+           Lokalitet2 = sprintf("%s\n%s (%s)", Lokalitet, Engtype, Vegetasjonssone),
+           # 'Sort_order' is used later to put Lokalitet2 in a logical order (order by type first, then by zone)
+           Sort_order = 
+             case_when(Engtype == "Lågurteng" ~ 10,
+                       Engtype == "Kalkeng" ~ 10,
+                       Engtype == "Blåbær- og lågurteng" ~ 10) +
+             case_when(Vegetasjonssone == "Boreonemoral" ~ 1,
+                       Vegetasjonssone == "Sørboreal" ~ 2,
+                       Vegetasjonssone == "Mellomboreal" ~ 3,
+                       Vegetasjonssone == "Nordboreal" ~ 4)
+    ) %>%
+    group_by(Lokalitet, Lokalitet2, Sort_order, 
+             Vegetasjonssone, Engtype, Felleoppsett, Unikhet) %>%
+    summarise(arter = n(), 
+              rødlista = sum(Status %in% c("NT", "VU", "EN", "CR")),
+              en_cr = sum(Status %in% c("EN", "CR")),
+              prim_1og2 = sum(Primær %in% c("1a","1b","2")),
+              prim_1b = sum(Primær %in% c("1a","1b")),
+              prim_2 = sum(Primær %in% c("2")),
+              prim_3 = sum(Primær %in% c("3")),
+              prim_4 = sum(Primær %in% c("4","5")),
+              rødlista_prim1og2 = sum(Status %in% c("NT", "VU", "EN", "CR") & Primær %in% c("1a","1b","2")),
+              sek = sum(!is.na(Sekundær)),
+              sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2")),
+              rødlista_sek_prim1og2 = sum(!is.na(Sekundær) & Primær %in% c("1a","1b","2") & 
+                                            Status %in% c("NT", "VU", "EN", "CR"))
+    ) %>%
+    ungroup()
+  
+  # Set levels for 'Lokalitet2':
+  lokalitet2_levels <- result %>%
+    count(Lokalitet2, Sort_order) %>% 
+    arrange(Sort_order) %>%
+    pull(Lokalitet2)
+  
+  result <- result %>%
+    mutate(Lokalitet2 = factor(Lokalitet2, levels = lokalitet2_levels))
+  
+  result
+  
+}
+
+
+# Test
+# make_uniqueness_data(dat2, type = 1)
+# make_uniqueness_data(dat2, type = 2)
+
+```
+
+### Biller
+```{r, fig.height = 5, fig.width = 8.5}
+dat2 %>%
+  filter(Order == "Coleoptera") %>%
+  make_uniqueness_data(type = 1) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall billearter")
+
+dat2 %>%
+  filter(Order == "Coleoptera") %>%
+  make_uniqueness_data(type = 2) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall billearter")
+
+```
+
+### Blomsterfluer
+```{r, fig.height = 5, fig.width = 8.5}
+dat2 %>%
+  filter(Family == "Syrphidae") %>%
+  make_uniqueness_data(type = 1) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall blomsterfluearter")
+
+dat2 %>%
+  filter(Family == "Syrphidae") %>%
+  make_uniqueness_data(type = 2) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall blomsterfluearter")
+
+```
+### Sommerfugler
+```{r, fig.height = 5, fig.width = 8.5}
+dat2 %>%
+  filter(Order == "Lepidoptera") %>%
+  make_uniqueness_data(type = 1) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_manual(values = tail(cols_blues,4)) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall sommerfuglarter")
+
+dat2 %>%
+  filter(Order == "Lepidoptera") %>%
+  make_uniqueness_data(type = 2) %>%
+  ggplot(aes(Lokalitet2, arter, fill = Unikhet)) +
+  geom_col() +
+  scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall sommerfuglarter")
+
+```
+
+## Akkumuleringsskurver
+
+### Lage data
+```{r, fig.height = 5, fig.width = 8.5}
+# Get locality with the highest number of _new_ species, given that 'species_included' (a vector of species names)
+#   already is included
+# Expects column names 'Art' and 'Lokalitet'
+get_locality <- function(df, species_included = NA, localities_included = NA){
+  df2 <- df %>%
+    filter(!Art %in% species_included)
+  # In the normal case, where not all species have been 'taken', we pick the locality which 
+  #   adds most species:
+  if (nrow(df2) > 0){
+    result <- df2 %>%
+      group_by(Lokalitet) %>%
+      summarise(n = length(unique(Art))) %>%
+      filter(n == max(n)) %>%
+      filter(row_number() == 1)
+  # In the case, that all species have been 'taken', we pick one random of the remaining localities and
+  #   sets n = 0
+  } else {
+    result <- df %>%
+      filter(!Lokalitet %in% localities_included) %>%
+      count(Lokalitet) %>%
+      filter(row_number() == 1) %>%
+      mutate(n = 0)
+  }
+  result
+}
+
+# Get a vector of species names for species already found in 'localities'  (a vector of locality names)
+#   already is included
+# Expects column names 'Art' and 'Lokalitet'
+get_species_included <- function(df, localities)
+  df %>%
+    filter(Lokalitet %in% localities) %>%
+    count(Art) %>%
+    pull(Art)
+# Test
+# loc <- get_locality(dat2)
+# loc
+# spp <- get_species_included(dat2, loc$Lokalitet)
+# loc2 <- get_locality(dat2, spp)
+# loc2
+
+# Makes a data frame of how to add localities in order to maximize  
+#   Expects column names 'Art' and 'Lokalitet'
+#   Also depends on 'dat_meat2' being defined
+get_accumulation <- function(df){
+  n_localities <- length(unique(df$Lokalitet))
+  result <- get_locality(df)
+  while (nrow(result) < n_localities){
+    species_already_included <- get_species_included(df, result$Lokalitet)
+    result <- bind_rows(
+      result,
+      get_locality(df, 
+                   species_included = species_already_included, 
+                   localities_included = result$Lokalitet)
+      )
+  }
+  # Add Lokalitet2
+  result <- result %>%
+    left_join(dat_meta2 %>% count(Lokalitet, Lokalitet2, Engtype, Vegetasjonssone) %>% select(-n), by = "Lokalitet")
+  # Order Lokalitet2 correctly
+  levels = result %>% pull(Lokalitet2)
+  result %>%
+    mutate(Lokalitet2 = factor(Lokalitet2, levels = levels),
+           n_akk = cumsum(n)) 
+}
+# Test
+# get_accumulation(dat2)
+
+# Colors for Vegetasjonssone
+col_zone <- RColorBrewer::brewer.pal(11, "Spectral")[c(1,3,9,11)] %>% rev()
+
+```
+
+### Alle arter
+```{r, fig.height = 5, fig.width = 8.5}
+df <- get_accumulation(dat2)
+
+ggplot(df, aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  # scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall arter (akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+### Rødlistearter
+```{r, fig.height = 5, fig.width = 8.5}
+df <- dat2 %>%
+  filter(Status %in% c("NT", "VU", "EN", "CR")) %>%
+  get_accumulation()
+
+ggplot(df, aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  # scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall rødlistearter (akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+
+### Engavhengige arter
+```{r, fig.height = 5, fig.width = 8.5}
+df <- dat2 %>%
+  filter(Primær %in% c("1a","1b","2")) %>%
+  get_accumulation()
+
+ggplot(df, aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  # scale_fill_brewer(type = "qual", palette = 3) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige arter (akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+
+### Engavhengige rødlistearter
+```{r, fig.height = 5, fig.width = 8.5}
+
+
+# debugonce(get_accumulation)
+df <- dat2 %>%
+  filter(Primær %in% c("1a","1b","2") & Status %in% c("NT", "VU", "EN", "CR")) %>%
+  get_accumulation()
+# df
+
+ggplot(df, aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige rødlistearter\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+### Biller
+```{r, fig.height = 5, fig.width = 8.5}
+
+dat2 %>%
+  filter(Order == "Coleoptera") %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall biller\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+dat2 %>%
+  filter(Order == "Coleoptera" & Primær %in% c("1a","1b","2")) %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige biller\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+
+### Blomsterfluer
+```{r, fig.height = 5, fig.width = 8.5}
+
+dat2 %>%
+  filter(Family == "Syrphidae") %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall blomsterfluearter\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+dat2 %>%
+  filter(Family == "Syrphidae" & Primær %in% c("1a","1b","2")) %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige blomsterfluearter\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
+
+
+### Sommerfugler
+```{r, fig.height = 5, fig.width = 8.5}
+
+dat2 %>%
+  filter(Order == "Lepidoptera") %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall blomsterfluearter\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+dat2 %>%
+  filter(Order == "Lepidoptera" & Primær %in% c("1a","1b","2")) %>%
+  get_accumulation() %>%
+  ggplot(aes(Lokalitet2, n_akk, fill = Vegetasjonssone)) +
+  geom_col() +
+  scale_fill_manual(values = col_zone) +
+  theme(axis.text.x = element_text(hjust = 0, angle = -35)) +
+  labs(y = "Antall engavhengige blomsterfluearter\n(akkumulert)",
+       x = "Lokalitet, sortert etter optimal rekkefølge")
+
+```
