@@ -39,17 +39,29 @@ dat <- dat %>%
   )
 
 # Lokalitetsdata         
-dat2 <- read_excel("Input_data/Lokalitetsdata_insekter i slåttemark.xlsx") %>% 
+dat2 <- read_excel("Input_data/Lokalitetsdata_insekter i slåttemark2.xlsx") %>% 
   mutate(Vegetasjonssone = 
            factor(Vegetasjonssone, levels = c("Nordboreal", "Mellomboreal", "Sørboreal", "Boreonemoral")))
 
 
+# Should be zero:
+dat %>%
+  count(Art) %>%
+  filter(n > 1) %>%
+  nrow()
+
+# Should be zero:
+dat2 %>%
+  count(Art, Lokalitet) %>%
+  filter(n > 1) %>%
+  nrow()
 
 ```
 
-## Artsdata
+## Artsdata  
+Start på fil
 ```{r}
-dat
+head(dat, 30) 
 ```
 
 
@@ -80,18 +92,21 @@ dat2 %>%
 
 ```
 
-#### Grupper 2
+#### Grupper 2   
+Top 30
 ```{r}
 dat2 %>%
   count(Art, Order, Family) %>%
   count(Order, Family) %>%
-  arrange(desc(n))
+  arrange(desc(n)) %>%
+  head(30)
 
 ```
 
 #### Grupper, 'treemap'  
 
 ```{r}
+
 df <- dat2 %>%
   count(Art, Order, Family, Primær) %>%
   group_by(Order) %>%
@@ -102,18 +117,46 @@ df <- dat2 %>%
   ungroup() %>%
   mutate(
     Order2 = ifelse(n_order >= 25, Order, "Other orders"),
-    Family2 = ifelse(n >= 25, Family, "Other families")
+    Family2 = ifelse(n >=25, Family, "Other families")
   )
 
 gg <- ggplot(df, aes(area = n, fill = Engarter,
                subgroup = Order2, subgroup2 = Family2)) +
   geom_treemap() +
   geom_treemap_subgroup_border(size = 3, colour = "red2") +
-  geom_treemap_subgroup2_text(alpha = 0.8, color = "white") +
-  geom_treemap_subgroup_text(place = "centre", grow = TRUE, alpha = 0.7, color = "red2") +
   scale_fill_continuous("Engarter\n(%)")
 
-ggsave("Treemap.png", gg, width = 7, height = 4.5)
+gg1 <- gg +
+  geom_treemap_subgroup2_text(alpha = 0.8, color = "white") +
+  geom_treemap_subgroup_text(place = "centre", grow = TRUE, alpha = 0.7, color = "red2")
+
+gg2a <- gg +
+  geom_treemap_subgroup2_text(alpha = 0.8, color = "white") +
+  geom_treemap_subgroup_text(place = "centre", grow = FALSE, alpha = 0.7, color = "red2")
+
+# min.size = 3
+gg2b <- gg +
+  geom_treemap_subgroup2_text(alpha = 0.8, color = "white", min.size = 3) +
+  geom_treemap_subgroup_text(place = "centre", grow = FALSE, alpha = 0.7, color = "red2", 
+                             min.size = 3)
+
+ggsave("Treemap_ver1.png", gg1, width = 7, height = 4.5)
+ggsave("Treemap_ver2a.png", gg2a, width = 7, height = 4.5)
+ggsave("Treemap_ver2b.png", gg2b, width = 7, height = 4.5)
+  
+# min.size = 2 and different layout algorithm
+gg <- ggplot(df, aes(area = n, fill = Engarter,
+               subgroup = Order2, subgroup2 = Family2)) +
+  geom_treemap(layout = "srow") +
+  geom_treemap_subgroup_border(size = 3, colour = "red2", layout = "srow") +
+  scale_fill_continuous("Engarter\n(%)")
+gg2c <- gg +
+  geom_treemap_subgroup2_text(alpha = 0.8, color = "white", min.size = 2, layout = "srow") +
+  geom_treemap_subgroup_text(place = "centre", grow = FALSE, alpha = 0.7, color = "red2", 
+                             min.size = 2, layout = "srow")
+
+ggsave("Treemap_ver2c.png", gg2c, width = 7, height = 4.5)
+
 
 ```
 
